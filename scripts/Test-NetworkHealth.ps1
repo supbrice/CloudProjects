@@ -78,9 +78,20 @@ function Test-Reach {
         }
     }
     catch {
-        $tcp = Test-TcpRtt -HostName $HostName -Port 443
-        if (-not $tcp.Ok) {
-            $tcp = Test-TcpRtt -HostName $HostName -Port 53
+        $isPrivate = $false
+        try {
+            $parsed = [System.Net.IPAddress]::Parse($HostName)
+            $bytes = $parsed.GetAddressBytes()
+            $isPrivate = ($bytes[0] -eq 10) -or
+                ($bytes[0] -eq 192 -and $bytes[1] -eq 168) -or
+                ($bytes[0] -eq 172 -and $bytes[1] -ge 16 -and $bytes[1] -le 31)
+        }
+        catch { $isPrivate = $false }
+        $ports = if ($isPrivate) { @(53) } else { @(443, 53) }
+        $tcp = @{ Ok = $false; Ms = $null; Detail = "no tcp fallback" }
+        foreach ($port in $ports) {
+            $tcp = Test-TcpRtt -HostName $HostName -Port $port
+            if ($tcp.Ok) { break }
         }
         $ok = [bool]$tcp.Ok
         if ($ok -and $null -ne $tcp.Ms -and $tcp.Ms -gt $LimitMs) {
@@ -134,7 +145,7 @@ if ($Profile -eq "demo") {
             Name   = "isolation sample"
             Ok     = $true
             Skip   = $true
-            Detail = "skipped in demo (would probe 10.10.10.1:443 from public/OT)"
+            Detail = "skipped in demo (would probe 10.10.10.1:53 from public/OT)"
         })
 }
 else {
@@ -162,12 +173,12 @@ else {
         }
     }
     $results.Add([pscustomobject](Get-DhcpInfo))
-    $probe = Test-TcpRtt -HostName "10.10.10.1" -Port 443 -TimeoutMs 2000
+    $probe = Test-TcpRtt -HostName "10.10.10.1" -Port 53 -TimeoutMs 2000
     $results.Add([pscustomobject]@{
             Name   = "isolation sample"
             Ok     = -not $probe.Ok
             Skip   = $false
-            Detail = if ($probe.Ok) { "unexpected connect to 10.10.10.1:443" } else { "no connect to corporate gw ($($probe.Detail))" }
+            Detail = if ($probe.Ok) { "unexpected connect to 10.10.10.1:53" } else { "no connect to corporate gw ($($probe.Detail))" }
         })
 }
 

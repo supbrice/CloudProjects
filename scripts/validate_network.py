@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import ipaddress
 import json
 import os
 import socket
@@ -21,7 +22,8 @@ from pathlib import Path
 from typing import Iterable
 
 DEFAULT_LATENCY_MS = 80.0
-ISOLATION_TARGET = ("10.10.10.1", 443)
+# Corporate gateway DNS — not 443, which intercepting proxies often answer for any IP.
+ISOLATION_TARGET = ("10.10.10.1", 53)
 DEMO_DNS = ("cloudflare.com", "quad9.net")
 DEMO_TCP = (("1.1.1.1", 443), ("9.9.9.9", 443))
 
@@ -127,20 +129,55 @@ def ping_rtt(host: str, timeout: float = 2.0) -> tuple[bool, float | None, str]:
     return True, None, "icmp ok"
 
 
+def _is_private_host(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
 def reachability(host: str, latency_ms: float) -> CheckResult:
     ok_ping, rtt, detail = ping_rtt(host)
     if ok_ping:
         if rtt is not None and rtt > latency_ms:
             return CheckResult(f"reach {host}", False, f"{detail} (limit {latency_ms:.0f} ms)")
         return CheckResult(f"reach {host}", True, detail)
-    ok_tcp, rtt, tcp_detail = tcp_rtt(host, 443)
-    if not ok_tcp:
-        ok_tcp, rtt, tcp_detail = tcp_rtt(host, 53)
-    if not ok_tcp:
-        return CheckResult(f"reach {host}", False, f"icmp failed ({detail}); tcp failed ({tcp_detail})")
-    if rtt is not None and rtt > latency_ms:
-        return CheckResult(f"reach {host}", False, f"{tcp_detail} (limit {latency_ms:.0f} ms)")
-    return CheckResult(f"reach {host}", True, f"{tcp_detail} (icmp blocked)")
+    # Private gateways: ICMP then DNS/53. Skip 80/443 — proxies often accept those for any IP.
+    ports = (53,) if _is_private_host(host) else (443, 53)
+    last_tcp = "no tcp fallback"
+    for port in ports:
+        ok_tcp, rtt, tcp_detail = tcp_rtt(host, port)
+        last_tcp = tcp_detail
+        if not ok_tcp:
+            continue
+        if rtt is not None and rtt > latency_ms:
+            return CheckResult(f"reach {host}", False, f"{tcp_detail} (limit {latency_ms:.0f} ms)")
+        return CheckResult(f"reach {host}", True, f"{tcp_detail} (icmp blocked)")
+    return CheckResult(f"reach {host}", False, f"icmp failed ({detail}); tcp failed ({last_tcp})")
+
+
+def _linux_ipv4_ioctl() -> list[str]:
+    import fcntl
+    import struct
+
+    sysfs = Path("/sys/class/net")
+    if not sysfs.is_dir():
+        return []
+    found: list[str] = []
+    for iface in sysfs.iterdir():
+        name = iface.name
+        if name == "lo":
+            continue
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            packed = struct.pack("256s", name.encode()[:15])
+            addr = socket.inet_ntoa(fcntl.ioctl(sock.fileno(), 0x8915, packed)[20:24])
+            found.append(f"{name} {addr}")
+        except OSError:
+            continue
+        finally:
+            sock.close()
+    return found
 
 
 def dhcp_info() -> CheckResult:
@@ -153,25 +190,28 @@ def dhcp_info() -> CheckResult:
             text=True,
             timeout=5,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return CheckResult("dhcp", True, f"ip addr unavailable ({exc})", skipped=True)
-    if proc.returncode != 0:
-        return CheckResult("dhcp", True, "ip addr failed", skipped=True)
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return CheckResult("dhcp", True, "could not parse ip -j addr", skipped=True)
-    leases: list[str] = []
-    for iface in payload:
-        ifname = iface.get("ifname", "?")
-        for addr in iface.get("addr_info", []):
-            if addr.get("family") != "inet" or addr.get("scope") != "global":
-                continue
-            dyn = "dynamic" if addr.get("dynamic") else "static"
-            leases.append(f"{ifname} {addr.get('local')}/{addr.get('prefixlen')} {dyn}")
-    if not leases:
-        return CheckResult("dhcp", True, "no global IPv4 on this host (informational)", skipped=True)
-    return CheckResult("dhcp", True, "; ".join(leases), skipped=True)
+    except (OSError, subprocess.TimeoutExpired):
+        proc = None
+    if proc is not None and proc.returncode == 0:
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            payload = None
+        if payload is not None:
+            leases: list[str] = []
+            for iface in payload:
+                ifname = iface.get("ifname", "?")
+                for addr in iface.get("addr_info", []):
+                    if addr.get("family") != "inet" or addr.get("scope") != "global":
+                        continue
+                    dyn = "dynamic" if addr.get("dynamic") else "static"
+                    leases.append(f"{ifname} {addr.get('local')}/{addr.get('prefixlen')} {dyn}")
+            if leases:
+                return CheckResult("dhcp", True, "; ".join(leases), skipped=True)
+    ioctl_addrs = _linux_ipv4_ioctl()
+    if ioctl_addrs:
+        return CheckResult("dhcp", True, "; ".join(ioctl_addrs), skipped=True)
+    return CheckResult("dhcp", True, "no global IPv4 visible on this host (informational)", skipped=True)
 
 
 def isolation_check(enabled: bool) -> CheckResult:
@@ -179,7 +219,7 @@ def isolation_check(enabled: bool) -> CheckResult:
         return CheckResult(
             "isolation sample",
             True,
-            "skipped in demo (would probe 10.10.10.1:443 from public/OT)",
+            "skipped in demo (would probe 10.10.10.1:53 from public/OT)",
             skipped=True,
         )
     ok, _, detail = tcp_rtt(*ISOLATION_TARGET, timeout=2.0)

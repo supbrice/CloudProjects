@@ -64,7 +64,7 @@ Checks encoded in those scripts:
 | Latency | RTT under the per-zone threshold (defaults in the scripts) |
 | DNS | Resolves the zone’s `vendor_check_host` or demo names |
 | DHCP (informational) | Interface has a lease; gateway/DNS match the VLAN |
-| Isolation sample | Public/OT client cannot open TCP to `10.10.10.1:443` |
+| Isolation sample | Public/OT client cannot open TCP to `10.10.10.1:53` |
 
 ### Continuous
 

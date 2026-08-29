@@ -60,10 +60,8 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual(net["name"], row.name)
 
     def test_poe_csv_vlans_exist(self) -> None:
-        plan_vlans = {
-            int(raw["vlan_id"])
-            for raw in csv.DictReader((ROOT / "docs" / "vlan-plan.csv").open())
-        }
+        with (ROOT / "docs" / "vlan-plan.csv").open(encoding="utf-8") as handle:
+            plan_vlans = {int(raw["vlan_id"]) for raw in csv.DictReader(handle)}
         with (ROOT / "docs" / "poe-budget.csv").open() as handle:
             for raw in csv.DictReader(handle):
                 self.assertIn(int(raw["vlan"]), plan_vlans)

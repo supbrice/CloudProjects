@@ -122,7 +122,7 @@ After each IDF and after cutover:
 - Ping and latency to each zone gateway.
 - DNS resolution from corporate and public clients.
 - DHCP scope behavior (correct gateway, DNS, and lease range per VLAN).
-- Confirm public and OT clients cannot reach corporate gateways.
+- Confirm public and OT clients cannot reach the corporate gateway (DNS/53 or ICMP).
 - Spot-check vendor-hosted OT URLs from the OT VLANs only.
 
 Scripts that encode those checks:
