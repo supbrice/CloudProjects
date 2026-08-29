@@ -1,0 +1,8 @@
+vlan_id,name,zone,cidr,gateway,dhcp_start,dhcp_end,dns,qos_class,allow_internet,inter_vlan,vendor_check_host,notes
+10,Corporate,corporate,10.10.10.0/24,10.10.10.1,10.10.10.50,10.10.10.199,10.10.10.1,CS1,yes,deny,cloudflare.com,Staff LAN; NAT to internet
+20,Public,public,10.10.20.0/24,10.10.20.1,10.10.20.50,10.10.20.220,1.1.1.1;9.9.9.9,CS0,yes,deny,1.1.1.1,Guest/public; internet only
+30,OT-Signage,ot,10.10.30.0/24,10.10.30.1,10.10.30.200,10.10.30.220,10.10.30.1,AF21,limited,deny,example-signage-vendor.test,Static players .10-.49
+40,OT-Signals,ot,10.10.40.0/24,10.10.40.1,,,10.10.40.1,EF,limited,deny,example-signals-vendor.test,Static only; highest QoS
+50,OT-Fleet,ot,10.10.50.0/24,10.10.50.1,10.10.50.200,10.10.50.220,10.10.50.1,AF41,limited,deny,example-fleet-vendor.test,Tracking gateways
+60,Protect,protect,10.10.60.0/24,10.10.60.1,,,10.10.60.1,AF31,no,deny,,Console .2; cameras static
+99,Management,management,10.10.99.0/24,10.10.99.1,10.10.99.200,10.10.99.220,10.10.99.1,CS6,yes,allow,,Switches; controller; jump host
