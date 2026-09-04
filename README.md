@@ -1,6 +1,6 @@
 # Network Infrastructure Upgrade
 
-**Computer Plus Solutions** · portfolio write-up by [Ngu Brice Che](https://github.com/supbrice)
+**Computer Plus Solutions** · portfolio write-up by [Brice](https://github.com/supbrice)
 
 This repository documents a business network I designed and deployed: gateways, managed Layer 2/3 PoE switches, VLAN zoning, UniFi Protect on a PoE camera topology, NAT/QoS policy, and the checks used to validate the build.
 
