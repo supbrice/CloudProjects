@@ -1,0 +1,95 @@
+{
+  "description": "Sanitized UniFi network objects matching the CPS VLAN plan. Not a controller export.",
+  "site": "cps-hq-example",
+  "networks": [
+    {
+      "name": "Corporate",
+      "purpose": "corporate",
+      "vlan_enabled": true,
+      "vlan": 10,
+      "ip_subnet": "10.10.10.0/24",
+      "dhcpd_enabled": true,
+      "dhcpd_start": "10.10.10.50",
+      "dhcpd_stop": "10.10.10.199",
+      "dhcpd_dns_1": "10.10.10.1",
+      "dhcpd_leasetime": 28800,
+      "domain_name": "cps.internal",
+      "internet_access": true,
+      "igmp_snooping": true
+    },
+    {
+      "name": "Public",
+      "purpose": "guest",
+      "vlan_enabled": true,
+      "vlan": 20,
+      "ip_subnet": "10.10.20.0/24",
+      "dhcpd_enabled": true,
+      "dhcpd_start": "10.10.20.50",
+      "dhcpd_stop": "10.10.20.220",
+      "dhcpd_dns_1": "1.1.1.1",
+      "dhcpd_dns_2": "9.9.9.9",
+      "dhcpd_leasetime": 7200,
+      "internet_access": true,
+      "guest_isolation": true
+    },
+    {
+      "name": "OT-Signage",
+      "purpose": "corporate",
+      "vlan_enabled": true,
+      "vlan": 30,
+      "ip_subnet": "10.10.30.0/24",
+      "dhcpd_enabled": true,
+      "dhcpd_start": "10.10.30.200",
+      "dhcpd_stop": "10.10.30.220",
+      "dhcpd_dns_1": "10.10.30.1",
+      "internet_access": true,
+      "note": "Players use static .10-.49; DHCP is commissioning only"
+    },
+    {
+      "name": "OT-Signals",
+      "purpose": "corporate",
+      "vlan_enabled": true,
+      "vlan": 40,
+      "ip_subnet": "10.10.40.0/24",
+      "dhcpd_enabled": false,
+      "dhcpd_dns_1": "10.10.40.1",
+      "internet_access": true,
+      "note": "Static only; QoS EF"
+    },
+    {
+      "name": "OT-Fleet",
+      "purpose": "corporate",
+      "vlan_enabled": true,
+      "vlan": 50,
+      "ip_subnet": "10.10.50.0/24",
+      "dhcpd_enabled": true,
+      "dhcpd_start": "10.10.50.200",
+      "dhcpd_stop": "10.10.50.220",
+      "dhcpd_dns_1": "10.10.50.1",
+      "internet_access": true
+    },
+    {
+      "name": "Protect",
+      "purpose": "corporate",
+      "vlan_enabled": true,
+      "vlan": 60,
+      "ip_subnet": "10.10.60.0/24",
+      "dhcpd_enabled": false,
+      "internet_access": false,
+      "note": "Console 10.10.60.2; cameras static from .10"
+    },
+    {
+      "name": "Management",
+      "purpose": "corporate",
+      "vlan_enabled": true,
+      "vlan": 99,
+      "ip_subnet": "10.10.99.0/24",
+      "dhcpd_enabled": true,
+      "dhcpd_start": "10.10.99.200",
+      "dhcpd_stop": "10.10.99.220",
+      "dhcpd_dns_1": "10.10.99.1",
+      "internet_access": true,
+      "note": "Controller 10.10.99.2; jump host 10.10.99.10"
+    }
+  ]
+}

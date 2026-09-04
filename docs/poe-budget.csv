@@ -1,0 +1,13 @@
+switch,port,device,device_class,vlan,poe_class,budget_watts,allocated_watts,link_speed,notes
+SW-IDF-FRONT,1,UAP-AC-Lite-Lobby,access-point,99,4,370,13.5,1G,AP management on VLAN 99
+SW-IDF-FRONT,2,UAP-AC-Lite-Shop,access-point,99,4,370,13.5,1G,
+SW-IDF-FRONT,5,G4-Bullet-Entry,protect-camera,60,0,370,4.0,100M,Fast Ethernet; run would not train at 1G
+SW-IDF-FRONT,6,G4-Bullet-Lot,protect-camera,60,0,370,4.0,100M,
+SW-IDF-FRONT,7,G4-Dome-Counter,protect-camera,60,0,370,5.0,1G,
+SW-IDF-FRONT,8,G4-Dome-Aisle,protect-camera,60,0,370,5.0,1G,
+SW-IDF-FRONT,11,Signage-Player-01,ot-signage,30,0,370,0.0,1G,Data only; wall-powered
+SW-IDF-REAR,1,UAP-AC-Pro-Yard,access-point,99,4,195,20.0,1G,Higher draw AP
+SW-IDF-REAR,3,G4-Bullet-Dock,protect-camera,60,0,195,4.0,100M,Long copper; verified 100/full
+SW-IDF-REAR,4,G4-Bullet-Fence,protect-camera,60,0,195,4.0,100M,
+SW-IDF-REAR,9,Fleet-Gateway-01,ot-fleet,50,0,195,0.0,100M,Data only
+SW-IDF-REAR,10,Signal-Ctrl-01,ot-signals,40,0,195,0.0,100M,Data only

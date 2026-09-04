@@ -1,204 +1,158 @@
-# Cloud & Infrastructure Projects - Step-by-Step Guide
+# Network Infrastructure Upgrade
 
-This README provides detailed step-by-step explanations of how I accomplished the major projects and tasks outlined in my professional experience. From deploying multi-cloud infrastructure to implementing API management, this document serves as a walkthrough of my processes and methodologies.
+**Computer Plus Solutions** · portfolio write-up by [Ngu Brice Che](https://github.com/supbrice)
 
----
+This repository documents a business network I designed and deployed: gateways, managed Layer 2/3 PoE switches, VLAN zoning, UniFi Protect on a PoE camera topology, NAT/QoS policy, and the checks used to validate the build.
 
-## 1️⃣ Multi-Cloud Infrastructure Automation
+Configs and addresses here are **sanitized examples** that match the design. They are not a dump of a customer controller.
 
-### **Goal:**  
-Design and implement a multi-cloud infrastructure using **Terraform** for seamless deployment across **Azure**, **AWS**, and **GCP**.
-
-### **Steps:**
-1. **Infrastructure Planning:**  
-   - Analyzed business requirements to determine the resource needs for multi-cloud support.
-   - Identified critical services (e.g., compute, networking, and storage) across Azure, AWS, and GCP.
-
-2. **Terraform Configuration:**
-   - Created modular Terraform configurations for reusable code.
-   - Wrote provider blocks for Azure (`azurerm`), AWS (`aws`), and GCP (`google`) to define resource provisioning.
-   - Example snippet for a Terraform module:
-     ```hcl
-     provider "azurerm" {
-       features {}
-     }
-
-     resource "azurerm_virtual_machine" "example" {
-       name                  = "example-vm"
-       location              = "East US"
-       resource_group_name   = "example-resources"
-       network_interface_ids = [azurerm_network_interface.example.id]
-       vm_size               = "Standard_DS1_v2"
-
-       os_disk {
-         caching           = "ReadWrite"
-         storage_account_type = "Standard_LRS"
-       }
-     }
-     ```
-
-3. **CI/CD Pipeline Integration:**
-   - Set up Azure DevOps pipelines to automate the deployment process.
-   - Configured the pipeline to trigger on commits to the main branch.
-   - Used tools like `terraform fmt` for code validation and `terraform apply` for automated deployments.
-
-4. **Validation & Testing:**
-   - Tested deployments in isolated environments before moving to production.
-   - Implemented monitoring tools like **Prometheus** and **Grafana** for visibility into resource health.
+Related experience that shaped the validation work: IT support at **MTN** (DNS, DHCP, VPN, firewalls, endpoint monitoring, and segmentation for 100+ users).
 
 ---
 
-## 2️⃣ Automated CI/CD Pipelines
+## Problem
 
-### **Goal:**  
-Automate application deployment using **Azure DevOps** and **Jenkins**, reducing deployment time by 40%.
+The site mixed staff PCs, guest/public access, and operational technology (digital signage, signals, fleet tracking) on a flat or poorly segmented LAN. Cameras and access points needed reliable PoE. Vendor-hosted OT systems needed outbound reach without opening a path into corporate traffic.
 
-### **Steps:**
-1. **Pipeline Design:**
-   - Structured pipelines into distinct stages: **Build**, **Test**, and **Deploy**.
-   - Defined pipeline YAML for Azure DevOps:
-     ```yaml
-     trigger:
-       branches:
-         include:
-           - main
+The upgrade had to do four things:
 
-     pool:
-       vmImage: 'ubuntu-latest'
-
-     stages:
-       - stage: Build
-         jobs:
-           - job: BuildJob
-             steps:
-               - task: UseDotNet@2
-                 inputs:
-                   packageType: sdk
-                   version: '5.0.x'
-               - script: dotnet build
-       - stage: Deploy
-         jobs:
-           - job: DeployJob
-             steps:
-               - task: AzureCLI@2
-                 inputs:
-                   azureSubscription: 'MySubscription'
-                   scriptType: 'bash'
-                   scriptLocation: 'inlineScript'
-                   inlineScript: |
-                     az deployment group create --resource-group MyGroup --template-file main.bicep
-     ```
-
-2. **Automation Scripts:**
-   - Used Jenkins for legacy systems by creating declarative pipelines in Jenkinsfile.
-   - Integrated `Docker` to containerize applications during the build stage.
-
-3. **Testing & Rollbacks:**
-   - Implemented unit and integration tests to validate code during the build phase.
-   - Added rollback procedures using Terraform to revert to the last stable state if deployments failed.
+1. Segment **public**, **corporate**, and **OT** traffic.
+2. Power and backhaul UniFi Protect cameras without starving other PoE devices.
+3. Enforce NAT, routing, and QoS so OT and staff traffic could not freely mix.
+4. Leave a repeatable way to prove links, DNS/DHCP, and zone isolation after cutover.
 
 ---
 
-## 3️⃣ API Management and Integration
+## Design
 
-### **Goal:**  
-Develop and manage APIs using **Azure API Management** to ensure secure and scalable integrations.
+### Zones and VLANs
 
-### **Steps:**
-1. **API Gateway Setup:**
-   - Provisioned Azure API Management service using Terraform.
-   - Configured the gateway to manage traffic, handle throttling, and enforce security policies.
+| Zone | VLAN | Subnet | Purpose |
+| --- | --- | --- | --- |
+| Corporate | 10 | `10.10.10.0/24` | Staff workstations, printers, file/print |
+| Public | 20 | `10.10.20.0/24` | Guest / public Wi-Fi — internet only |
+| OT Signage | 30 | `10.10.30.0/24` | Digital displays, content players |
+| OT Signals | 40 | `10.10.40.0/24` | Signaling / control endpoints |
+| OT Fleet | 50 | `10.10.50.0/24` | Vehicle / asset tracking gateways |
+| Protect | 60 | `10.10.60.0/24` | UniFi Protect cameras and console |
+| Management | 99 | `10.10.99.0/24` | Gateway, switches, controller, jump host |
 
-2. **API Development:**
-   - Designed RESTful APIs for internal and external use cases using **Python** (Flask) and **Node.js**.
-   - Example Python Flask API:
-     ```python
-     from flask import Flask, jsonify
+Full table, DHCP scopes, and DHCP/DNS options: [`docs/vlan-plan.md`](docs/vlan-plan.md) · [`docs/vlan-plan.csv`](docs/vlan-plan.csv)
 
-     app = Flask(__name__)
+### Topology
 
-     @app.route('/api/v1/data', methods=['GET'])
-     def get_data():
-         return jsonify({"message": "Data retrieved successfully"})
+```mermaid
+flowchart TB
+  inet((Internet))
+  gw[UniFi gateway<br/>NAT · firewall · DHCP · QoS]
+  sw[Managed L2/L3 PoE switches]
+  inet --- gw
+  gw --- sw
 
-     if __name__ == "__main__":
-         app.run(host='0.0.0.0', port=5000)
-     ```
+  sw --> corp[VLAN 10 Corporate]
+  sw --> pub[VLAN 20 Public]
+  sw --> sign[VLAN 30 Signage]
+  sw --> sig[VLAN 40 Signals]
+  sw --> fleet[VLAN 50 Fleet]
+  sw --> cam[VLAN 60 UniFi Protect]
+  sw --> mgmt[VLAN 99 Management]
 
-3. **Policy Implementation:**
-   - Used Azure API Management policies to handle caching, rate limiting, and transformation.
-   - Example of caching policy:
-     ```xml
-     <inbound>
-         <cache-lookup vary-by-developer="false" />
-     </inbound>
-     ```
+  corp --> staff[Staff PCs · printers]
+  pub --> guests[Guest / public clients]
+  sign --> players[Signage players]
+  sig --> signals[Signal controllers]
+  fleet --> trackers[Fleet trackers]
+  cam --> nvr[Protect console + cameras]
+  mgmt --> ops[Switches · controller · jump host]
+```
 
-4. **Monitoring & Optimization:**
-   - Integrated **Azure Monitor** for API performance tracking.
-   - Used logs to identify bottlenecks and reduced API latency by optimizing database queries.
+### Isolation, NAT, and QoS
+
+Default stance: **deny inter-VLAN**, then allow only what a zone needs.
+
+| From | To | Policy |
+| --- | --- | --- |
+| Public | Anywhere except internet | Deny |
+| Corporate | Internet | Allow via NAT |
+| Corporate | OT / Protect | Deny (admin jump host on VLAN 99 only) |
+| OT Signage / Signals / Fleet | Vendor-hosted destinations | Allow specific outbound; NAT |
+| OT | Corporate / Public / other OT | Deny |
+| Protect cameras | Protect console | Allow on VLAN 60 |
+| Protect | Internet / Corporate | Deny |
+| Management | All zones | Allow from jump host for ops |
+
+QoS on the gateway:
+
+- **Signals and fleet** — highest queue (latency-sensitive control and tracking).
+- **Protect video** — reserved bandwidth so recordings do not burst into OT or staff traffic.
+- **Corporate** — default business class.
+- **Public** — scavenger / lowest. Guest cannot starve staff or OT.
+
+Example rule sets: [`configs/unifi/firewall-and-nat.md`](configs/unifi/firewall-and-nat.md) · [`configs/unifi/networks.json`](configs/unifi/networks.json)
+
+### PoE and UniFi Protect
+
+Cameras and APs sit on the same PoE switching layer as the rest of the access edge. The console stays on VLAN 60 so detections and recordings stay local (UniFi Protect’s on-device analytics — not a cloud SIEM).
+
+Work on this piece:
+
+- Per-switch **power budget** vs camera + AP draw, with headroom for PoE negotiation spikes.
+- Camera ports as **PoE + VLAN 60 access**; uplinks as tagged trunks.
+- Confirm **Fast Ethernet (100 Mbps)** data sync on copper runs that would not train at gigabit — still enough for 1080p/2K Protect streams if the link is clean.
+
+Budget worksheet and calculator: [`docs/poe-budget.csv`](docs/poe-budget.csv) · [`scripts/poe_budget.py`](scripts/poe_budget.py)  
+Protect port notes: [`configs/unifi/protect.md`](configs/unifi/protect.md)
+
+### Layer 2 adoption loops
+
+UniFi switches and cameras that had lived on another controller would adopt, drop, and reappear. Typical cause: stale inform URL in NVRAM plus Layer 2 discovery fighting the current gateway.
+
+Fix sequence used on site:
+
+1. Factory **NVRAM reset** (hardware reset or `syswrapper.sh restore-default` over SSH).
+2. Confirm the device is on the management or Protect VLAN with a DHCP or static address.
+3. SSH **set-inform** to the current controller, then wait for adoption — do not re-adopt from a second inform host.
+
+Runbook: [`docs/adoption-and-validation.md`](docs/adoption-and-validation.md)
+
+### Validation and monitoring
+
+After each IDF and after cutover:
+
+- Ping and latency to each zone gateway.
+- DNS resolution from corporate and public clients.
+- DHCP scope behavior (correct gateway, DNS, and lease range per VLAN).
+- Confirm public and OT clients cannot reach the corporate gateway (DNS/53 or ICMP).
+- Spot-check vendor-hosted OT URLs from the OT VLANs only.
+
+Scripts that encode those checks:
+
+```bash
+python3 scripts/validate_network.py --plan docs/vlan-plan.csv --profile demo
+```
+
+```powershell
+./scripts/Test-NetworkHealth.ps1 -Plan docs/vlan-plan.csv -Profile demo
+```
+
+`--profile demo` uses public DNS/HTTPS targets so the scripts can run off-site. `--profile live` uses the VLAN gateways and vendor hostnames in the plan.
+
+Ongoing monitoring is the UniFi controller (device up/down, PoE faults, adopt state) plus scheduled runs of the same scripts against staff and vendor-hosted endpoints. No Prometheus/Grafana stack was part of this project.
 
 ---
 
-## 4️⃣ Network Infrastructure Optimization
+## Repository layout
 
-### **Goal:**  
-Enhance scalability and reduce downtime by 25% through automated network monitoring workflows.
+```
+docs/                  VLAN plan, PoE budget, adoption/validation notes
+configs/unifi/         Example networks, firewall/NAT/QoS, Protect ports
+scripts/               Python and PowerShell checks + PoE calculator
+```
 
-### **Steps:**
-1. **Monitoring Setup:**
-   - Deployed **Azure Network Watcher** to monitor network performance.
-   - Configured alerts for key metrics such as bandwidth usage and latency.
+## What this is not
 
-2. **Automation Tools:**
-   - Wrote PowerShell and Python scripts to automate alert responses.
-   - Example PowerShell script for network monitoring:
-     ```powershell
-     $resourceGroup = "example-group"
-     $vmName = "example-vm"
+This repo does **not** cover AWS, GCP, Jenkins, or a claimed percentage cut in deployment time. Those were leftover from an older generic README and are not part of this work.
 
-     Get-AzVM -ResourceGroupName $resourceGroup -Name $vmName | Start-AzVM
-     ```
+## Contact
 
-3. **Load Balancer Configuration:**
-   - Configured Azure Load Balancers to distribute traffic evenly and handle failovers.
-   - Tuned health probes to ensure only healthy VMs received traffic.
-
----
-
-## 5️⃣ Logging and Monitoring with Prometheus & Grafana
-
-### **Goal:**  
-Improve system visibility and reliability using **Prometheus** for monitoring and **Grafana** for visualization.
-
-### **Steps:**
-1. **Prometheus Setup:**
-   - Deployed Prometheus as a Docker container:
-     ```bash
-     docker run -d --name prometheus -p 9090:9090 -v /path/to/config:/etc/prometheus prom/prometheus
-     ```
-
-2. **Metrics Collection:**
-   - Configured exporters (e.g., Node Exporter) to collect system-level metrics.
-   - Defined Prometheus scrape configurations in `prometheus.yml`.
-
-3. **Grafana Dashboards:**
-   - Integrated Grafana with Prometheus as the data source.
-   - Created custom dashboards for CPU usage, memory usage, and API latency.
-
-4. **Alerting:**
-   - Set up Grafana alerts to notify stakeholders of threshold breaches via Slack and email.
-
----
-
-## 🔧 Tools and Technologies Used
-- **Cloud Platforms:** Azure, AWS, GCP  
-- **Automation:** Terraform, Ansible, Azure DevOps, Jenkins  
-- **Containerization:** Docker, Kubernetes  
-- **Monitoring:** Prometheus, Grafana, Azure Monitor  
-- **API Development:** Python, Node.js, Azure API Management  
-- **Scripting:** Bash, PowerShell, Python  
-
----
-
-This README consolidates the technical methodologies and step-by-step approaches I employed to deliver impactful cloud and infrastructure solutions. If you'd like more details, feel free to reach out via my [LinkedIn Profile](https://linkedin.com/in/ngubriceche).
+[linkedin.com/in/ngubriceche](https://www.linkedin.com/in/ngubriceche) · [github.com/supbrice](https://github.com/supbrice)
