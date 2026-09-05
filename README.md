@@ -1,45 +1,41 @@
 # Network Infrastructure Upgrade
 
-**Computer Plus Solutions** · portfolio write-up by [Brice](https://github.com/supbrice)
+**Computer Plus Solutions** · portfolio write-up by [Ngu Brice Che](https://github.com/supbrice)
 
-This repository documents a business network I designed and deployed: gateways, managed Layer 2/3 PoE switches, VLAN zoning, UniFi Protect on a PoE camera topology, NAT/QoS policy, and the checks used to validate the build.
+Business network I designed and deployed: UniFi gateway, managed Layer 2/3 PoE switches, VLAN zoning (public / corporate / OT), UniFi Protect, NAT/QoS, and post-cutover validation.
 
-Configs and addresses here are **sanitized examples** that match the design. They are not a dump of a customer controller.
+Configs and addresses are **sanitized examples** that match the design — not a dump of a customer controller. This is a **client-sized** site, not a fake campus-scale estate.
 
-Related experience that shaped the validation work: IT support at **MTN** (DNS, DHCP, VPN, firewalls, endpoint monitoring, and segmentation for 100+ users).
+Related background: IT support at **MTN** (DNS, DHCP, VPN, firewalls, endpoint monitoring, segmentation for 100+ users).
+
+---
+
+## Recruiter / interviewer — 30 seconds
+
+| Prove | Where |
+| --- | --- |
+| Topology | Mermaid diagram below |
+| VLAN plan (ID / purpose / subnet) | Table below · [`docs/vlan-plan.md`](docs/vlan-plan.md) |
+| Isolation / NAT / QoS | Policy table below |
+| Real troubleshooting | **[`docs/troubleshooting-scenarios.md`](docs/troubleshooting-scenarios.md)** (DNS, DHCP, VLAN, vendor path, L2 adoption) |
+| Validation scripts | `scripts/validate_network.py` · `scripts/Test-NetworkHealth.ps1` |
 
 ---
 
 ## Problem
 
-The site mixed staff PCs, guest/public access, and operational technology (digital signage, signals, fleet tracking) on a flat or poorly segmented LAN. Cameras and access points needed reliable PoE. Vendor-hosted OT systems needed outbound reach without opening a path into corporate traffic.
+The site mixed staff PCs, guest/public access, and operational technology (digital signage, signals, fleet tracking) on a flat or poorly segmented LAN. Cameras and APs needed reliable PoE. Vendor-hosted OT needed outbound reach without a path into corporate traffic.
 
-The upgrade had to do four things:
+Goals:
 
 1. Segment **public**, **corporate**, and **OT** traffic.
-2. Power and backhaul UniFi Protect cameras without starving other PoE devices.
+2. Power and backhaul UniFi Protect without starving other PoE devices.
 3. Enforce NAT, routing, and QoS so OT and staff traffic could not freely mix.
 4. Leave a repeatable way to prove links, DNS/DHCP, and zone isolation after cutover.
 
 ---
 
-## Design
-
-### Zones and VLANs
-
-| Zone | VLAN | Subnet | Purpose |
-| --- | --- | --- | --- |
-| Corporate | 10 | `10.10.10.0/24` | Staff workstations, printers, file/print |
-| Public | 20 | `10.10.20.0/24` | Guest / public Wi-Fi — internet only |
-| OT Signage | 30 | `10.10.30.0/24` | Digital displays, content players |
-| OT Signals | 40 | `10.10.40.0/24` | Signaling / control endpoints |
-| OT Fleet | 50 | `10.10.50.0/24` | Vehicle / asset tracking gateways |
-| Protect | 60 | `10.10.60.0/24` | UniFi Protect cameras and console |
-| Management | 99 | `10.10.99.0/24` | Gateway, switches, controller, jump host |
-
-Full table, DHCP scopes, and DHCP/DNS options: [`docs/vlan-plan.md`](docs/vlan-plan.md) · [`docs/vlan-plan.csv`](docs/vlan-plan.csv)
-
-### Topology
+## Topology
 
 ```mermaid
 flowchart TB
@@ -66,7 +62,25 @@ flowchart TB
   mgmt --> ops[Switches · controller · jump host]
 ```
 
-### Isolation, NAT, and QoS
+---
+
+## VLAN table
+
+| Zone | VLAN | Subnet | Purpose |
+| --- | --- | --- | --- |
+| Corporate | 10 | `10.10.10.0/24` | Staff workstations, printers, file/print |
+| Public | 20 | `10.10.20.0/24` | Guest / public Wi-Fi — internet only |
+| OT Signage | 30 | `10.10.30.0/24` | Digital displays, content players |
+| OT Signals | 40 | `10.10.40.0/24` | Signaling / control endpoints |
+| OT Fleet | 50 | `10.10.50.0/24` | Vehicle / asset tracking gateways |
+| Protect | 60 | `10.10.60.0/24` | UniFi Protect cameras and console |
+| Management | 99 | `10.10.99.0/24` | Gateway, switches, controller, jump host |
+
+Full DHCP/DNS options and switchport roles: [`docs/vlan-plan.md`](docs/vlan-plan.md) · [`docs/vlan-plan.csv`](docs/vlan-plan.csv)
+
+---
+
+## Isolation, NAT, and QoS
 
 Default stance: **deny inter-VLAN**, then allow only what a zone needs.
 
@@ -81,51 +95,38 @@ Default stance: **deny inter-VLAN**, then allow only what a zone needs.
 | Protect | Internet / Corporate | Deny |
 | Management | All zones | Allow from jump host for ops |
 
-QoS on the gateway:
+QoS: signals/fleet highest · Protect reserved · corporate default · public lowest.
 
-- **Signals and fleet** — highest queue (latency-sensitive control and tracking).
-- **Protect video** — reserved bandwidth so recordings do not burst into OT or staff traffic.
-- **Corporate** — default business class.
-- **Public** — scavenger / lowest. Guest cannot starve staff or OT.
+Example rules: [`configs/unifi/firewall-and-nat.md`](configs/unifi/firewall-and-nat.md) · [`configs/unifi/networks.json`](configs/unifi/networks.json)
 
-Example rule sets: [`configs/unifi/firewall-and-nat.md`](configs/unifi/firewall-and-nat.md) · [`configs/unifi/networks.json`](configs/unifi/networks.json)
+---
 
-### PoE and UniFi Protect
+## Troubleshooting (hire signal)
 
-Cameras and APs sit on the same PoE switching layer as the rest of the access edge. The console stays on VLAN 60 so detections and recordings stay local (UniFi Protect’s on-device analytics — not a cloud SIEM).
+Five written scenarios from this work:
 
-Work on this piece:
+1. DNS mismatch on guest vs corporate  
+2. DHCP lease on the wrong VLAN  
+3. OT → corporate isolation failure  
+4. Vendor path down while WAN is up (NAT/firewall, not “VPN magic”)  
+5. UniFi Layer 2 adoption / stale inform loops  
 
-- Per-switch **power budget** vs camera + AP draw, with headroom for PoE negotiation spikes.
-- Camera ports as **PoE + VLAN 60 access**; uplinks as tagged trunks.
-- Confirm **Fast Ethernet (100 Mbps)** data sync on copper runs that would not train at gigabit — still enough for 1080p/2K Protect streams if the link is clean.
+Full write-ups: **[`docs/troubleshooting-scenarios.md`](docs/troubleshooting-scenarios.md)**  
+Adoption runbook: [`docs/adoption-and-validation.md`](docs/adoption-and-validation.md)
 
-Budget worksheet and calculator: [`docs/poe-budget.csv`](docs/poe-budget.csv) · [`scripts/poe_budget.py`](scripts/poe_budget.py)  
-Protect port notes: [`configs/unifi/protect.md`](configs/unifi/protect.md)
+---
 
-### Layer 2 adoption loops
+## PoE and UniFi Protect
 
-UniFi switches and cameras that had lived on another controller would adopt, drop, and reappear. Typical cause: stale inform URL in NVRAM plus Layer 2 discovery fighting the current gateway.
+- Per-switch power budget vs camera + AP draw ([`docs/poe-budget.csv`](docs/poe-budget.csv) · [`scripts/poe_budget.py`](scripts/poe_budget.py))
+- Cameras: PoE + access VLAN 60; uplinks tagged trunks
+- Confirm FE (100 Mbps) where copper will not train at gigabit — still enough for Protect streams if the link is clean
 
-Fix sequence used on site:
+Port notes: [`configs/unifi/protect.md`](configs/unifi/protect.md)
 
-1. Factory **NVRAM reset** (hardware reset or `syswrapper.sh restore-default` over SSH).
-2. Confirm the device is on the management or Protect VLAN with a DHCP or static address.
-3. SSH **set-inform** to the current controller, then wait for adoption — do not re-adopt from a second inform host.
+---
 
-Runbook: [`docs/adoption-and-validation.md`](docs/adoption-and-validation.md)
-
-### Validation and monitoring
-
-After each IDF and after cutover:
-
-- Ping and latency to each zone gateway.
-- DNS resolution from corporate and public clients.
-- DHCP scope behavior (correct gateway, DNS, and lease range per VLAN).
-- Confirm public and OT clients cannot reach the corporate gateway (DNS/53 or ICMP).
-- Spot-check vendor-hosted OT URLs from the OT VLANs only.
-
-Scripts that encode those checks:
+## Validation
 
 ```bash
 python3 scripts/validate_network.py --plan docs/vlan-plan.csv --profile demo
@@ -135,23 +136,23 @@ python3 scripts/validate_network.py --plan docs/vlan-plan.csv --profile demo
 ./scripts/Test-NetworkHealth.ps1 -Plan docs/vlan-plan.csv -Profile demo
 ```
 
-`--profile demo` uses public DNS/HTTPS targets so the scripts can run off-site. `--profile live` uses the VLAN gateways and vendor hostnames in the plan.
+`--profile demo` = off-site public targets. `--profile live` = VLAN gateways + vendor hostnames in the plan.
 
-Ongoing monitoring is the UniFi controller (device up/down, PoE faults, adopt state) plus scheduled runs of the same scripts against staff and vendor-hosted endpoints. No Prometheus/Grafana stack was part of this project.
+Monitoring: UniFi controller (offline / PoE / adopt / WAN) + scheduled script runs. No Prometheus/Grafana on this project.
 
 ---
 
 ## Repository layout
 
 ```
-docs/                  VLAN plan, PoE budget, adoption/validation notes
-configs/unifi/         Example networks, firewall/NAT/QoS, Protect ports
-scripts/               Python and PowerShell checks + PoE calculator
+docs/       VLAN plan, PoE budget, adoption + troubleshooting scenarios
+configs/    Example UniFi networks, firewall/NAT/QoS, Protect notes
+scripts/    Python + PowerShell validation, PoE calculator
 ```
 
 ## What this is not
 
-This repo does **not** cover AWS, GCP, Jenkins, or a claimed percentage cut in deployment time. Those were leftover from an older generic README and are not part of this work.
+Not AWS/GCP/Jenkins. Not invented SLAs or “40% faster” claims. Not a production controller export.
 
 ## Contact
 
