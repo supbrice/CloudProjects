@@ -1,6 +1,6 @@
 # Network Infrastructure Upgrade
 
-**Computer Plus Solutions** · portfolio write-up by [Ngu Brice Che](https://github.com/supbrice)
+**Computer Plus Solutions** · portfolio write-up by [Brice](https://github.com/supbrice)
 
 Business network I designed and deployed: UniFi gateway, managed Layer 2/3 PoE switches, VLAN zoning (public / corporate / OT), UniFi Protect, NAT/QoS, and post-cutover validation.
 
